@@ -1,6 +1,0 @@
-# image: selenium/standalone-chrome:latest
-# image:
-#     file: Dockerfile
-# ports:
-# - port: 8000
-
