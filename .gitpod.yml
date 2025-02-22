@@ -1,0 +1,5 @@
+image: python:3.13.2-slim-bullseye
+ports:
+- port: 8000
+tasks:
+- command: pip install -r requirements.txt
