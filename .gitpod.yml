@@ -1,5 +1,6 @@
-image: python:3.13.2-slim-bullseye
+# image: selenium/standalone-chrome:latest
+image:
+    file: Dockerfile
 ports:
 - port: 8000
-tasks:
-- command: pip install -r requirements.txt
+
