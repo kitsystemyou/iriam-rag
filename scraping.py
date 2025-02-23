@@ -1,37 +1,75 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.options import Options
-import shutil
+import asyncio
+from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
+import time
 
-# Chrome の実行ファイルを探す
-chrome_path = shutil.which("google-chrome") or shutil.which("chromium") or "/usr/bin/chromium-browser"
+async def scrape():
+    url = "https://support.iriam.com/hc/ja"
 
-# Chrome オプションを設定
-options = Options()
-options.binary_location = chrome_path  # ← Chrome のパスを指定
-options.add_argument("--headless=new")  # ヘッドレスモード（新バージョンの安定版）
-options.add_argument("--no-sandbox")  # 必須（サンドボックスを無効化）
-options.add_argument("--disable-dev-shm-usage")  # 必須（共有メモリの問題を回避）
-options.add_argument("--remote-debugging-port=9222")  # デバッグポートを指定
-options.add_argument("--disable-gpu")  # GPU を無効化（特に Linux での問題回避）
-options.add_argument("--disable-software-rasterizer")  # ソフトウェアレンダリングを無効化
-options.add_argument("--disable-background-networking")  # バックグラウンドの通信を抑制
-options.add_argument("--disable-sync")  # Chrome の同期を無効化
-options.add_argument("--disable-translate")  # 翻訳機能を無効化
-options.add_argument("--disable-extensions")  # 拡張機能を無効化
-options.add_argument("--disable-popup-blocking")  # ポップアップブロックを無効化
-options.add_argument("--disable-features=OptimizationGuideModelDownloading,OptimizationHintsFetching,OptimizationTargetPrediction")  # 一部の最適化機能を無効化
+    async with async_playwright() as p:
+        # ブラウザの設定を強化
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--disable-features=IsolateOrigins,site-per-process',
+            ]
+        )
+        
+        # ブラウザコンテキストの設定
+        context = await browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            java_script_enabled=True,
+        )
+        
+        page = await context.new_page()
+        await stealth_async(page)
 
-# ChromeDriver を取得
-service = Service(ChromeDriverManager().install())
+        # JavaScript の設定
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => false,
+            });
+        """)
 
-# WebDriver の起動
-driver = webdriver.Chrome(service=service, options=options)
+        try:
+            # ページにアクセス
+            response = await page.goto(url, wait_until="networkidle")
+            
+            # Cloudflare チェックが終わるまで待機
+            await page.wait_for_load_state("networkidle")
+            await asyncio.sleep(5)  # 追加の待機時間
+            
+            # "Just a moment..." が表示されている場合の追加待機
+            max_retries = 3
+            current_retry = 0
+            
+            while current_retry < max_retries:
+                title = await page.title()
+                if title != "Just a moment...":
+                    break
+                print(f"待機中... 試行回数: {current_retry + 1}")
+                await asyncio.sleep(5)
+                current_retry += 1
 
-# Web ページを開く
-driver.get("https://support.iriam.com/hc/ja")
-print(driver.title)
+            # コンテンツの取得
+            title = await page.title()
+            print(f"ページタイトル: {title}")
+            
+            # メインコンテンツが読み込まれるまで待機
+            await page.wait_for_selector('.article-list', timeout=30000)
+            
+            content = await page.content()
+            print(content)
+            print(f"ページのHTMLの長さ: {len(content)} 文字")
 
-# 終了
-driver.quit()
+        except Exception as e:
+            print(f"エラーが発生しました: {e}")
+        
+        finally:
+            await context.close()
+            await browser.close()
+
+if __name__ == "__main__":
+    asyncio.run(scrape())
