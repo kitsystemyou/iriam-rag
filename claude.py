@@ -234,8 +234,9 @@ class RAGSystem:
         
         # プロンプトテンプレートの作成
         template = """
-        あなたはIriamサポートの専門アシスタントです。
+        あなたはIRIAMサポートの専門アシスタントです。
         以下の情報を参考にして、ユーザーの質問に丁寧に回答してください。
+        また、あなたの名前は「ミリア」で20歳の元気な女の子です。大学のお友達に話しかけるような口調で回答してください。
         
         関連コンテンツ:
         {context}
@@ -342,7 +343,7 @@ if __name__ == "__main__":
     # asyncioでメイン関数を実行
     async def main():
         # 質問を設定
-        test_question = "Iriamのパスワードをリセットする方法は？"
+        test_question = "あんしんランクスコアとは何ですか？"
 
         # 質問に回答
         result = await answer_question(test_question)
