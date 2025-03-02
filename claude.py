@@ -2,11 +2,11 @@ import os
 import re
 import time
 import asyncio
-from urllib.parse import urljoin, urlparse
 import pandas as pd
 import numpy as np
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
+from urllib.parse import urljoin, urlparse
 from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
@@ -281,49 +281,71 @@ class RAGSystem:
             "sources": source_urls
         }
 
-# 6. メイン関数：全体の実行
-async def build_rag_system(base_url="https://support.iriam.com/hc/ja", max_pages=100):
-    """RAGシステムを構築する"""
-    # 1. クローリング
-    logger.info("クローリングを開始します...")
-    crawler = PlaywrightCrawler(base_url=base_url, max_pages=max_pages)
-    crawled_data = await crawler.crawl()
+# 6. 既存インデックスのロードまたは新規作成
+async def load_or_build_rag_system(base_url="https://support.iriam.com/hc/ja", max_pages=100, index_path="faiss_index"):
+    """既存インデックスをロードするか、なければ新規に構築する"""
     
-    # データフレームに変換して保存（オプション）
-    df = pd.DataFrame(crawled_data)
-    df.to_csv("crawled_data.csv", index=False)
-    logger.info(f"クロール済みデータを保存しました。{len(crawled_data)}件のドキュメントを取得。")
+    index_path_obj = pathlib.Path(index_path)
+    embeddings = OpenAIEmbeddings()
     
-    # 2. テキスト処理
-    logger.info("テキスト処理を開始します...")
-    processor = DocumentProcessor(chunk_size=1000, chunk_overlap=200)
-    processed_docs = processor.process_documents(crawled_data)
-    logger.info(f"テキスト処理完了。{len(processed_docs)}件のチャンクに分割されました。")
-    
-    # 3. ベクトルインデックス作成
-    logger.info("ベクトルインデックスを作成中...")
-    vector_store = processor.create_vector_index(processed_docs)
-    
-    # インデックスを保存（オプション）
-    vector_store.save_local("faiss_index")
-    logger.info("ベクトルインデックスを保存しました。")
-    
+    # インデックスが存在するかチェック
+    if index_path_obj.exists() and any(index_path_obj.iterdir()):
+        logger.info(f"既存のインデックスが見つかりました: {index_path}")
+        # 既存のインデックスをロード
+        vector_store = FAISS.load_local(index_path, embeddings)
+        logger.info("インデックスのロードが完了しました。")
+    else:
+        logger.info(f"インデックスが見つからないため、新規構築を開始します。")
+        # 1. クローリング
+        logger.info("クローリングを開始します...")
+        crawler = PlaywrightCrawler(base_url=base_url, max_pages=max_pages)
+        crawled_data = await crawler.crawl()
+
+        # データフレームに変換して保存（オプション）
+        df = pd.DataFrame(crawled_data)
+        df.to_csv("crawled_data.csv", index=False)
+        logger.info(f"クロール済みデータを保存しました。{len(crawled_data)}件のドキュメントを取得。")
+
+        # 2. テキスト処理
+        logger.info("テキスト処理を開始します...")
+        processor = DocumentProcessor(chunk_size=1000, chunk_overlap=200)
+        processed_docs = processor.process_documents(crawled_data)
+        logger.info(f"テキスト処理完了。{len(processed_docs)}件のチャンクに分割されました。")
+
+        # 3. ベクトルインデックス作成
+        logger.info("ベクトルインデックスを作成中...")
+        vector_store = processor.create_vector_index(processed_docs)
+
+        # インデックスを保存
+        vector_store.save_local(index_path)
+        logger.info(f"ベクトルインデックスを保存しました: {index_path}")
+
     # 4. RAGシステム構築
     logger.info("RAGシステムを構築中...")
     rag_system = RAGSystem(vector_store)
-    
+
     return rag_system
 
-# 7. 実行例
+# 7. 質問応答用の関数
+async def answer_question(question, base_url="https://support.iriam.com/hc/ja", max_pages=100, index_path="faiss_index"):
+    """質問に回答する"""
+    # RAGシステムを取得（ロードまたは構築）
+    rag_system = await load_or_build_rag_system(base_url, max_pages, index_path)
+
+    # 質問に回答
+    result = rag_system.answer_question(question)
+
+    return result
+
+# 8. 実行例
 if __name__ == "__main__":
     # asyncioでメイン関数を実行
     async def main():
-        # RAGシステムの構築
-        rag_system = await build_rag_system()
-        
-        # テスト質問
+        # 質問を設定
         test_question = "Iriamのパスワードをリセットする方法は？"
-        result = rag_system.answer_question(test_question)
+
+        # 質問に回答
+        result = await answer_question(test_question)
         
         print("\n=== 質問 ===")
         print(test_question)
