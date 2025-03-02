@@ -292,7 +292,7 @@ async def load_or_build_rag_system(base_url="https://support.iriam.com/hc/ja", m
     if index_path_obj.exists() and any(index_path_obj.iterdir()):
         logger.info(f"既存のインデックスが見つかりました: {index_path}")
         # 既存のインデックスをロード
-        vector_store = FAISS.load_local(index_path, embeddings)
+        vector_store = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
         logger.info("インデックスのロードが完了しました。")
     else:
         logger.info(f"インデックスが見つからないため、新規構築を開始します。")
